@@ -20,7 +20,8 @@ a tradeoff exists.
   Alex $73.50."
 - **Settle-up tracking.** Payments can be recorded in the app so outstanding
   balances tick down to zero.
-- **Free cloud hosting**, reachable from everyone's phones. Mobile-first UI.
+- **Hosted on Railway** (app + Postgres in one project, ~$5/mo Hobby plan),
+  reachable from everyone's phones. Mobile-first UI.
 
 Out of scope (deliberately): user accounts, receipt photos/OCR, multi-currency,
 unequal splits, notifications, payment-provider integration (people settle via
@@ -32,11 +33,11 @@ Boring, well-supported, free to run:
 
 | Layer     | Choice                                   | Why |
 |-----------|------------------------------------------|-----|
-| Framework | **Next.js (App Router, TypeScript)**     | One codebase for UI + API routes; first-class Vercel deploys. |
+| Framework | **Next.js (App Router, TypeScript)**     | One codebase for UI + server logic; deploys anywhere Node runs. |
 | Styling   | **Tailwind CSS**                         | Fast to build a clean mobile-first UI. |
-| Database  | **Postgres on Neon (free tier)**         | Vercel's filesystem is ephemeral, so SQLite won't persist; Neon's serverless Postgres free tier is plenty for this workload. |
+| Database  | **Postgres on Railway**                  | Lives in the same Railway project as the app; one dashboard, one `DATABASE_URL` reference variable. |
 | ORM       | **Drizzle**                              | Lightweight, typed schema + migrations. |
-| Hosting   | **Vercel (free tier)**                   | Push-to-deploy from GitHub; HTTPS URL for the group. |
+| Hosting   | **Railway (Hobby plan)**                 | Push-to-deploy from GitHub; HTTPS URL for the group; no free-tier cold starts. |
 
 No auth library needed: the trip code is the credential, and the picked name
 is stored in a cookie/localStorage per trip.
@@ -137,23 +138,29 @@ UX details:
 - The dashboard shows *your* position ("You are owed $31.20") using the name
   cookie, since that's the question everyone actually has.
 
-## API surface (Next.js route handlers)
+## Server surface (Next.js Server Actions)
+
+Mutations are implemented as Server Actions in `src/lib/actions.ts` rather
+than REST route handlers — same capabilities, less plumbing, and forms work
+without client-side JavaScript:
 
 ```
-POST   /api/trips                     create trip (+ participants) → code
-GET    /api/trips/[code]              trip + participants + expenses + settlements
-POST   /api/trips/[code]/participants
-PATCH  /api/participants/[id]
-POST   /api/trips/[code]/expenses
-PATCH  /api/expenses/[id]
-DELETE /api/expenses/[id]
-GET    /api/trips/[code]/settlement   computed balances + suggested payments
-POST   /api/trips/[code]/settlements  record a payment
-DELETE /api/settlements/[id]
+createTrip          create trip (+ participants) → redirects to /t/[code]
+joinTrip            look up a trip by code
+pickName            claim a participant identity (sets the device cookie)
+switchName          clear the device cookie
+addParticipant      add a late joiner
+renameParticipant
+createExpense       insert expense + sharer rows (transactional)
+updateExpense       replace fields + sharer rows (transactional)
+deleteExpense
+recordSettlement    record a settle-up payment
+deleteSettlement    undo a recorded payment
 ```
 
-Every route requires the trip code in the path and verifies it exists — that's
-the entire authorization model, by design.
+Reads live in `src/lib/queries.ts`. Every action takes the trip code, verifies
+the trip exists, and scopes all writes to that trip's ids — that's the entire
+authorization model, by design.
 
 ## Build plan
 
@@ -162,5 +169,5 @@ the entire authorization model, by design.
 3. **Expenses** — add/edit/delete, list view, equal-split share storage.
 4. **Settlement** — balance computation, greedy simplification, settle-up
    recording. Unit tests on the math (rounding, zero-sum invariant).
-5. **Polish & deploy** — mobile styling, empty states, deploy to Vercel,
-   connect Neon, smoke-test from a phone.
+5. **Polish & deploy** — mobile styling, empty states, deploy app + Postgres
+   to Railway, smoke-test from a phone.
