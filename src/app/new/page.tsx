@@ -1,7 +1,12 @@
 import Link from "next/link";
 import { createTrip } from "@/lib/actions";
 
-export default function NewTrip() {
+export default async function NewTrip({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
+  const { error } = await searchParams;
   return (
     <main className="py-8">
       <Link href="/" className="text-sm text-slate-500">
@@ -11,6 +16,9 @@ export default function NewTrip() {
       <p className="mt-1 text-sm text-slate-600">
         You&rsquo;ll get a short code to share with everyone.
       </p>
+      {error && (
+        <p className="mt-3 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-700">{error}</p>
+      )}
 
       <form action={createTrip} className="mt-6 flex flex-col gap-5">
         <div>

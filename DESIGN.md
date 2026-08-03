@@ -162,6 +162,18 @@ Reads live in `src/lib/queries.ts`. Every action takes the trip code, verifies
 the trip exists, and scopes all writes to that trip's ids — that's the entire
 authorization model, by design.
 
+## Known limitations (accepted)
+
+- **No real auth.** Anyone with the trip code can read and edit everything —
+  that's the trusted-group model, chosen deliberately.
+- **Concurrent "Mark paid" can double-record.** If two people tap the same
+  suggested payment at the same moment, it's recorded twice. The Settle page
+  makes this visible immediately and "Undo" fixes it in one tap, so no
+  idempotency machinery was added.
+- **"Today" defaults to UTC.** The date field pre-fills from the server
+  clock, so late-evening US entries may default to tomorrow's date — it's
+  editable right there in the form.
+
 ## Build plan
 
 1. **Scaffold** — Next.js + Tailwind + Drizzle + Neon; schema + migrations.

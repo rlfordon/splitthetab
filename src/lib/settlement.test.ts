@@ -149,4 +149,10 @@ describe("money helpers", () => {
     expect(parseAmountToCents("1.234")).toBeNull();
     expect(parseAmountToCents("abc")).toBeNull();
   });
+
+  it("caps amounts at $1,000,000", () => {
+    expect(parseAmountToCents("1000000")).toBe(100_000_000);
+    expect(parseAmountToCents("1000000.01")).toBeNull();
+    expect(parseAmountToCents("99999999999")).toBeNull();
+  });
 });

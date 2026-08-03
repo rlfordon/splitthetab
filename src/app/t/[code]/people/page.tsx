@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { TripHeader } from "@/components/TripHeader";
 import { TripNav } from "@/components/TripNav";
-import { addParticipant } from "@/lib/actions";
+import { addParticipant, renameParticipant } from "@/lib/actions";
 import { getTripData } from "@/lib/queries";
 
 export default async function PeoplePage({
@@ -15,6 +15,7 @@ export default async function PeoplePage({
   const { trip, participants, expenses } = data;
 
   const add = addParticipant.bind(null, trip.code);
+  const rename = renameParticipant.bind(null, trip.code);
   const expenseCount = (id: number) =>
     expenses.filter((e) => e.payerId === id || e.sharerIds.includes(id)).length;
 
@@ -27,14 +28,33 @@ export default async function PeoplePage({
         <h2 className="text-lg font-semibold">On this trip</h2>
         <ul className="mt-3 flex flex-col gap-2">
           {participants.map((p) => (
-            <li
-              key={p.id}
-              className="flex items-baseline justify-between rounded-xl bg-white p-4 shadow-sm"
-            >
-              <span className="font-medium">{p.name}</span>
-              <span className="text-sm text-slate-500">
-                {expenseCount(p.id)} receipt{expenseCount(p.id) === 1 ? "" : "s"}
-              </span>
+            <li key={p.id} className="rounded-xl bg-white p-4 shadow-sm">
+              <div className="flex items-baseline justify-between">
+                <span className="font-medium">{p.name}</span>
+                <span className="text-sm text-slate-500">
+                  {expenseCount(p.id)} receipt{expenseCount(p.id) === 1 ? "" : "s"}
+                </span>
+              </div>
+              <details className="mt-1">
+                <summary className="cursor-pointer text-xs text-slate-400">
+                  Rename
+                </summary>
+                <form action={rename} className="mt-2 flex gap-2">
+                  <input type="hidden" name="participantId" value={p.id} />
+                  <input
+                    name="name"
+                    defaultValue={p.name}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand focus:outline-none"
+                    required
+                  />
+                  <button
+                    type="submit"
+                    className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-semibold text-white active:bg-slate-800"
+                  >
+                    Save
+                  </button>
+                </form>
+              </details>
             </li>
           ))}
         </ul>

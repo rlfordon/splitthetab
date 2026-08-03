@@ -27,11 +27,22 @@ function requireNames(raw: FormDataEntryValue | null): string[] {
   return [...new Set(names)];
 }
 
+function isRealDate(s: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const [y, m, d] = s.split("-").map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  return (
+    date.getUTCFullYear() === y &&
+    date.getUTCMonth() === m - 1 &&
+    date.getUTCDate() === d
+  );
+}
+
 export async function createTrip(formData: FormData) {
   const name = String(formData.get("name") ?? "").trim();
   const names = requireNames(formData.get("participants"));
   if (!name || names.length < 2) {
-    throw new Error("A trip needs a name and at least two people.");
+    redirect("/new?error=A trip needs a name and at least two people (one per line).");
   }
 
   const code = await db.transaction(async (tx) => {
@@ -72,7 +83,7 @@ export async function pickName(code: string, formData: FormData) {
     .select()
     .from(participants)
     .where(and(eq(participants.id, participantId), eq(participants.tripId, trip.id)));
-  if (!person) throw new Error("Pick a name from the list.");
+  if (!person) redirect(`/t/${trip.code}`);
   await setIdentity(code, person.id);
   redirect(`/t/${trip.code}`);
 }
@@ -99,6 +110,11 @@ export async function renameParticipant(code: string, formData: FormData) {
   const name = String(formData.get("name") ?? "").trim();
   const trip = await getTripByCode(code);
   if (!trip || !name || !Number.isFinite(id)) return;
+  const taken = await db
+    .select({ id: participants.id })
+    .from(participants)
+    .where(and(eq(participants.tripId, trip.id), eq(participants.name, name)));
+  if (taken.length > 0) return;
   await db
     .update(participants)
     .set({ name })
@@ -125,7 +141,7 @@ async function parseExpenseForm(
   if (!amountCents) return "Enter a valid amount like 43.72.";
 
   const spentOn = String(formData.get("spentOn") ?? "").trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(spentOn)) return "Enter a valid date.";
+  if (!isRealDate(spentOn)) return "Enter a valid date.";
 
   const payerId = parseInt(String(formData.get("payerId") ?? ""), 10);
   const sharerIds = formData
