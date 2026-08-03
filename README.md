@@ -36,8 +36,9 @@ npm test
    → PostgreSQL).
 3. On the app service, add a variable that references the database:
    `DATABASE_URL` = `${{Postgres.DATABASE_URL}}`.
-4. Deploy. `railway.json` takes care of the rest: migrations run as the
-   pre-deploy command (`npm run db:migrate`) before each release starts.
+4. Deploy. `railway.json` takes care of the rest: the start command runs
+   `npm run db:migrate` before launching the server, so migrations apply on
+   every release.
 5. Under the app service's **Settings → Networking**, generate a public
    domain. That URL is what you share with your group.
 
