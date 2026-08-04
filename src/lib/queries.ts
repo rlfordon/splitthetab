@@ -4,10 +4,12 @@ import {
   expenses,
   expenseShares,
   participants,
+  paymentGroups,
   settlements,
   trips,
   type Expense,
   type Participant,
+  type PaymentGroup,
   type Settlement,
   type Trip,
 } from "@/db/schema";
@@ -19,6 +21,7 @@ export interface ExpenseWithShares extends Expense {
 export interface TripData {
   trip: Trip;
   participants: Participant[];
+  paymentGroups: PaymentGroup[];
   expenses: ExpenseWithShares[];
   settlements: Settlement[];
 }
@@ -35,12 +38,17 @@ export async function getTripData(code: string): Promise<TripData | null> {
   const trip = await getTripByCode(code);
   if (!trip) return null;
 
-  const [people, tripExpenses, tripSettlements] = await Promise.all([
+  const [people, groups, tripExpenses, tripSettlements] = await Promise.all([
     db
       .select()
       .from(participants)
       .where(eq(participants.tripId, trip.id))
       .orderBy(asc(participants.name)),
+    db
+      .select()
+      .from(paymentGroups)
+      .where(eq(paymentGroups.tripId, trip.id))
+      .orderBy(asc(paymentGroups.id)),
     db
       .select()
       .from(expenses)
@@ -72,6 +80,7 @@ export async function getTripData(code: string): Promise<TripData | null> {
   return {
     trip,
     participants: people,
+    paymentGroups: groups,
     expenses: tripExpenses.map((e) => ({
       ...e,
       sharerIds: sharesByExpense.get(e.id) ?? [],

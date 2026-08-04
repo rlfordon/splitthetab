@@ -16,6 +16,15 @@ export const trips = pgTable("trips", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// A shared wallet: members pay and settle as one (couple, family, ...).
+export const paymentGroups = pgTable("payment_groups", {
+  id: serial("id").primaryKey(),
+  tripId: integer("trip_id")
+    .notNull()
+    .references(() => trips.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+});
+
 export const participants = pgTable(
   "participants",
   {
@@ -24,6 +33,9 @@ export const participants = pgTable(
       .notNull()
       .references(() => trips.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
+    paymentGroupId: integer("payment_group_id").references(() => paymentGroups.id, {
+      onDelete: "set null",
+    }),
   },
   (t) => [unique().on(t.tripId, t.name)],
 );
@@ -72,6 +84,7 @@ export const settlements = pgTable("settlements", {
 });
 
 export type Trip = typeof trips.$inferSelect;
+export type PaymentGroup = typeof paymentGroups.$inferSelect;
 export type Participant = typeof participants.$inferSelect;
 export type Expense = typeof expenses.$inferSelect;
 export type Settlement = typeof settlements.$inferSelect;

@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { buildEntities } from "./entities";
 import { formatCents, parseAmountToCents } from "./money";
-import { computeBalances, simplifyDebts, splitCents } from "./settlement";
+import {
+  aggregateBalances,
+  computeBalances,
+  simplifyDebts,
+  splitCents,
+} from "./settlement";
 
 describe("splitCents", () => {
   it("splits evenly when divisible", () => {
@@ -124,6 +130,76 @@ describe("simplifyDebts", () => {
       { fromId: 2, toId: 1, amountCents: 700 },
       { fromId: 4, toId: 3, amountCents: 300 },
     ]);
+  });
+});
+
+describe("payment groups", () => {
+  // Trip: Alex(1) & Sam(2) are a couple; Jordan(3) is solo.
+  const people = [
+    { id: 1, tripId: 1, name: "Alex", paymentGroupId: 10 },
+    { id: 2, tripId: 1, name: "Sam", paymentGroupId: 10 },
+    { id: 3, tripId: 1, name: "Jordan", paymentGroupId: null },
+  ];
+  const groups = [{ id: 10, tripId: 1, name: "Alex & Sam" }];
+
+  it("builds entities: one wallet per group plus solo participants", () => {
+    const { entities, entityOf, walletNameOf } = buildEntities(people, groups);
+    expect(entities.map((e) => e.key)).toEqual(["g:10", "p:3"]);
+    expect(entityOf(1)).toBe("g:10");
+    expect(entityOf(2)).toBe("g:10");
+    expect(entityOf(3)).toBe("p:3");
+    expect(walletNameOf(2)).toBe("Alex & Sam");
+    expect(walletNameOf(3)).toBe("Jordan");
+  });
+
+  it("uses the lowest member id as the representative", () => {
+    const { byKey } = buildEntities(people, groups);
+    expect(byKey.get("g:10")!.representativeId).toBe(1);
+  });
+
+  it("pools member balances into the group wallet", () => {
+    // Alex pays $90 dinner for all three: Alex +60, Sam -30, Jordan -30.
+    const personBalances = computeBalances(
+      [1, 2, 3],
+      [{ payerId: 1, amountCents: 9000, sharerIds: [1, 2, 3] }],
+      [],
+    );
+    const { entityOf } = buildEntities(people, groups);
+    const pooled = aggregateBalances(personBalances, entityOf);
+    // Couple's wallet: +60 - 30 = +30. Jordan: -30.
+    expect(pooled.get("g:10")).toBe(3000);
+    expect(pooled.get("p:3")).toBe(-3000);
+  });
+
+  it("intra-group debts vanish; settlement is between wallets", () => {
+    // Sam pays $50 for just Alex & Sam — a wash inside the couple.
+    const personBalances = computeBalances(
+      [1, 2, 3],
+      [{ payerId: 2, amountCents: 5000, sharerIds: [1, 2] }],
+      [],
+    );
+    const { entityOf } = buildEntities(people, groups);
+    const pooled = aggregateBalances(personBalances, entityOf);
+    expect(pooled.get("g:10")).toBe(0);
+    expect(simplifyDebts(pooled)).toEqual([]);
+  });
+
+  it("simplifyDebts works over string entity keys", () => {
+    const pooled = new Map([
+      ["g:10", 3000],
+      ["p:3", -3000],
+    ]);
+    expect(simplifyDebts(pooled)).toEqual([
+      { fromId: "p:3", toId: "g:10", amountCents: 3000 },
+    ]);
+  });
+
+  it("empty groups are dropped and members without groups stay solo", () => {
+    const { entities } = buildEntities(
+      [{ id: 5, tripId: 1, name: "Riley", paymentGroupId: null }],
+      [{ id: 99, tripId: 1, name: "Ghosts" }],
+    );
+    expect(entities.map((e) => e.key)).toEqual(["p:5"]);
   });
 });
 

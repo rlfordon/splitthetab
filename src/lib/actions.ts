@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { customAlphabet } from "nanoid";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -9,6 +9,7 @@ import {
   expenses,
   expenseShares,
   participants,
+  paymentGroups,
   settlements,
   trips,
 } from "@/db/schema";
@@ -119,6 +120,54 @@ export async function renameParticipant(code: string, formData: FormData) {
     .update(participants)
     .set({ name })
     .where(and(eq(participants.id, id), eq(participants.tripId, trip.id)));
+  revalidatePath(`/t/${code}`, "layout");
+}
+
+export async function createPaymentGroup(code: string, formData: FormData) {
+  const trip = await getTripByCode(code);
+  if (!trip) redirect("/");
+
+  const memberIds = formData
+    .getAll("memberIds")
+    .map((v) => parseInt(String(v), 10))
+    .filter(Number.isFinite);
+  if (memberIds.length < 2) {
+    redirect(`/t/${code}/people?error=Pick at least two people to pay together.`);
+  }
+
+  const members = await db
+    .select()
+    .from(participants)
+    .where(and(eq(participants.tripId, trip.id), inArray(participants.id, memberIds)));
+  if (members.length !== memberIds.length) redirect(`/t/${code}/people`);
+
+  const name =
+    String(formData.get("name") ?? "").trim() ||
+    members.map((m) => m.name).join(" & ");
+
+  await db.transaction(async (tx) => {
+    const [group] = await tx
+      .insert(paymentGroups)
+      .values({ tripId: trip.id, name })
+      .returning();
+    await tx
+      .update(participants)
+      .set({ paymentGroupId: group.id })
+      .where(and(eq(participants.tripId, trip.id), inArray(participants.id, memberIds)));
+  });
+
+  revalidatePath(`/t/${code}`, "layout");
+  redirect(`/t/${code}/people`);
+}
+
+export async function deletePaymentGroup(code: string, groupId: number) {
+  const trip = await getTripByCode(code);
+  if (!trip) return;
+  // participants.payment_group_id is ON DELETE SET NULL, so members revert
+  // to settling individually.
+  await db
+    .delete(paymentGroups)
+    .where(and(eq(paymentGroups.id, groupId), eq(paymentGroups.tripId, trip.id)));
   revalidatePath(`/t/${code}`, "layout");
 }
 

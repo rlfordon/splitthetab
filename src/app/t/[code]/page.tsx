@@ -3,10 +3,11 @@ import { notFound } from "next/navigation";
 import { TripHeader } from "@/components/TripHeader";
 import { TripNav } from "@/components/TripNav";
 import { pickName, switchName } from "@/lib/actions";
+import { buildEntities } from "@/lib/entities";
 import { getIdentity } from "@/lib/identity";
 import { formatCents } from "@/lib/money";
 import { getTripData } from "@/lib/queries";
-import { computeBalances } from "@/lib/settlement";
+import { aggregateBalances, computeBalances } from "@/lib/settlement";
 
 export default async function TripPage({
   params,
@@ -16,7 +17,7 @@ export default async function TripPage({
   const { code } = await params;
   const data = await getTripData(code);
   if (!data) notFound();
-  const { trip, participants, expenses, settlements } = data;
+  const { trip, participants, paymentGroups, expenses, settlements } = data;
 
   const identity = await getIdentity(code);
   const me = participants.find((p) => p.id === identity) ?? null;
@@ -53,12 +54,19 @@ export default async function TripPage({
     );
   }
 
-  const balances = computeBalances(
-    participants.map((p) => p.id),
-    expenses,
-    settlements,
+  const { byKey, entityOf } = buildEntities(participants, paymentGroups);
+  const balances = aggregateBalances(
+    computeBalances(
+      participants.map((p) => p.id),
+      expenses,
+      settlements,
+    ),
+    entityOf,
   );
-  const myBalance = balances.get(me.id) ?? 0;
+  const myEntity = byKey.get(entityOf(me.id))!;
+  const myBalance = balances.get(myEntity.key) ?? 0;
+  const balanceLabel =
+    myEntity.memberIds.length > 1 ? `${myEntity.name} are` : "You are";
   const totalSpent = expenses.reduce((sum, e) => sum + e.amountCents, 0);
   const nameOf = new Map(participants.map((p) => [p.id, p.name]));
   const switchAction = switchName.bind(null, trip.code);
@@ -84,9 +92,9 @@ export default async function TripPage({
               }`}
             >
               {myBalance > 0
-                ? `You are owed ${formatCents(myBalance)}`
+                ? `${balanceLabel} owed ${formatCents(myBalance)}`
                 : myBalance < 0
-                  ? `You owe ${formatCents(-myBalance)}`
+                  ? `${myEntity.memberIds.length > 1 ? myEntity.name : "You"} owe ${formatCents(-myBalance)}`
                   : "You're all square"}
             </p>
           </div>

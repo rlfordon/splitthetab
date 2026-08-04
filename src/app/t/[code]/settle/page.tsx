@@ -3,9 +3,10 @@ import { ConfirmSubmit } from "@/components/ConfirmSubmit";
 import { TripHeader } from "@/components/TripHeader";
 import { TripNav } from "@/components/TripNav";
 import { deleteSettlement, recordSettlement } from "@/lib/actions";
+import { buildEntities } from "@/lib/entities";
 import { formatCents } from "@/lib/money";
 import { getTripData } from "@/lib/queries";
-import { computeBalances, simplifyDebts } from "@/lib/settlement";
+import { aggregateBalances, computeBalances, simplifyDebts } from "@/lib/settlement";
 
 export default async function SettlePage({
   params,
@@ -15,14 +16,18 @@ export default async function SettlePage({
   const { code } = await params;
   const data = await getTripData(code);
   if (!data) notFound();
-  const { trip, participants, expenses, settlements } = data;
+  const { trip, participants, paymentGroups, expenses, settlements } = data;
 
-  const nameOf = new Map(participants.map((p) => [p.id, p.name]));
-  const balances = computeBalances(
+  const { entities, byKey, entityOf, walletNameOf } = buildEntities(
+    participants,
+    paymentGroups,
+  );
+  const personBalances = computeBalances(
     participants.map((p) => p.id),
     expenses,
     settlements,
   );
+  const balances = aggregateBalances(personBalances, entityOf);
   const payments = simplifyDebts(balances);
   const record = recordSettlement.bind(null, trip.code);
   const maxAbs = Math.max(1, ...[...balances.values()].map((b) => Math.abs(b)));
@@ -34,14 +39,26 @@ export default async function SettlePage({
 
       <section className="mt-6">
         <h2 className="text-lg font-semibold">Balances</h2>
+        {paymentGroups.length > 0 && (
+          <p className="mt-1 text-sm text-slate-500">
+            People who pay together are counted as one wallet.
+          </p>
+        )}
         <ul className="mt-3 flex flex-col gap-2">
-          {participants.map((p) => {
-            const balance = balances.get(p.id) ?? 0;
+          {entities.map((entity) => {
+            const balance = balances.get(entity.key) ?? 0;
             const width = Math.max(4, (Math.abs(balance) / maxAbs) * 100);
             return (
-              <li key={p.id} className="rounded-xl bg-white p-3 shadow-sm">
+              <li key={entity.key} className="rounded-xl bg-white p-3 shadow-sm">
                 <div className="flex items-baseline justify-between text-sm">
-                  <span className="font-medium">{p.name}</span>
+                  <span className="font-medium">
+                    {entity.name}
+                    {entity.memberIds.length > 1 && (
+                      <span className="ml-2 text-xs font-normal text-slate-400">
+                        {entity.memberNames.join(" + ")}
+                      </span>
+                    )}
+                  </span>
                   <span
                     className={
                       balance > 0
@@ -80,32 +97,36 @@ export default async function SettlePage({
           </p>
         ) : (
           <ul className="mt-3 flex flex-col gap-2">
-            {payments.map((payment) => (
-              <li
-                key={`${payment.fromId}-${payment.toId}`}
-                className="flex items-center justify-between gap-3 rounded-xl bg-white p-4 shadow-sm"
-              >
-                <div>
-                  <p className="font-medium">
-                    {nameOf.get(payment.fromId)} pays {nameOf.get(payment.toId)}
-                  </p>
-                  <p className="text-lg font-bold text-slate-800">
-                    {formatCents(payment.amountCents)}
-                  </p>
-                </div>
-                <form action={record}>
-                  <input type="hidden" name="fromId" value={payment.fromId} />
-                  <input type="hidden" name="toId" value={payment.toId} />
-                  <input type="hidden" name="amountCents" value={payment.amountCents} />
-                  <button
-                    type="submit"
-                    className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white active:bg-brand-dark"
-                  >
-                    Mark paid
-                  </button>
-                </form>
-              </li>
-            ))}
+            {payments.map((payment) => {
+              const from = byKey.get(payment.fromId)!;
+              const to = byKey.get(payment.toId)!;
+              return (
+                <li
+                  key={`${payment.fromId}-${payment.toId}`}
+                  className="flex items-center justify-between gap-3 rounded-xl bg-white p-4 shadow-sm"
+                >
+                  <div>
+                    <p className="font-medium">
+                      {from.name} pays {to.name}
+                    </p>
+                    <p className="text-lg font-bold text-slate-800">
+                      {formatCents(payment.amountCents)}
+                    </p>
+                  </div>
+                  <form action={record}>
+                    <input type="hidden" name="fromId" value={from.representativeId} />
+                    <input type="hidden" name="toId" value={to.representativeId} />
+                    <input type="hidden" name="amountCents" value={payment.amountCents} />
+                    <button
+                      type="submit"
+                      className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white active:bg-brand-dark"
+                    >
+                      Mark paid
+                    </button>
+                  </form>
+                </li>
+              );
+            })}
           </ul>
         )}
         <p className="mt-2 text-xs text-slate-500">
@@ -128,8 +149,8 @@ export default async function SettlePage({
                   className="flex items-center justify-between gap-3 rounded-xl bg-white p-3 text-sm shadow-sm"
                 >
                   <span>
-                    <span className="font-medium">{nameOf.get(s.fromId)}</span> paid{" "}
-                    <span className="font-medium">{nameOf.get(s.toId)}</span>{" "}
+                    <span className="font-medium">{walletNameOf(s.fromId)}</span> paid{" "}
+                    <span className="font-medium">{walletNameOf(s.toId)}</span>{" "}
                     <span className="font-semibold">{formatCents(s.amountCents)}</span>
                   </span>
                   <form action={remove}>

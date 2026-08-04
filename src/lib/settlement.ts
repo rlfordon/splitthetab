@@ -10,9 +10,9 @@ export interface SettlementInput {
   amountCents: number;
 }
 
-export interface Payment {
-  fromId: number;
-  toId: number;
+export interface Payment<K = number> {
+  fromId: K;
+  toId: K;
   amountCents: number;
 }
 
@@ -62,23 +62,41 @@ export function computeBalances(
 }
 
 /**
+ * Pool per-participant balances into settling entities (payment groups and
+ * solo participants). Group members share one wallet, so their balances sum.
+ */
+export function aggregateBalances(
+  balances: Map<number, number>,
+  entityOf: (participantId: number) => string,
+): Map<string, number> {
+  const pooled = new Map<string, number>();
+  for (const [participantId, balance] of balances) {
+    const key = entityOf(participantId);
+    pooled.set(key, (pooled.get(key) ?? 0) + balance);
+  }
+  return pooled;
+}
+
+/**
  * Greedy debt simplification: repeatedly match the largest debtor with the
  * largest creditor. Produces at most n-1 payments that zero every balance.
  */
-export function simplifyDebts(balances: Map<number, number>): Payment[] {
-  const debtors: { id: number; amount: number }[] = [];
-  const creditors: { id: number; amount: number }[] = [];
+export function simplifyDebts<K extends string | number>(
+  balances: Map<K, number>,
+): Payment<K>[] {
+  const debtors: { id: K; amount: number }[] = [];
+  const creditors: { id: K; amount: number }[] = [];
   for (const [id, balance] of balances) {
     if (balance < 0) debtors.push({ id, amount: -balance });
     else if (balance > 0) creditors.push({ id, amount: balance });
   }
   // Sort descending, ties broken by id for determinism.
-  const byAmount = (a: { id: number; amount: number }, b: { id: number; amount: number }) =>
-    b.amount - a.amount || a.id - b.id;
+  const byAmount = (a: { id: K; amount: number }, b: { id: K; amount: number }) =>
+    b.amount - a.amount || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
   debtors.sort(byAmount);
   creditors.sort(byAmount);
 
-  const payments: Payment[] = [];
+  const payments: Payment<K>[] = [];
   let di = 0;
   let ci = 0;
   while (di < debtors.length && ci < creditors.length) {

@@ -18,6 +18,13 @@ a tradeoff exists.
 - **Settlement: simplified debts.** At any point (not just trip end) the app
   nets all balances and shows the minimum set of payments — "Sam pays
   Alex $73.50."
+- **Payment groups ("pay together").** A couple or family can be grouped
+  into one shared wallet. Members still appear individually on receipts
+  (check in exactly who participated; each owes their own share), but for
+  balances and settling up the group counts as a single entity — debts
+  inside a group vanish, and suggested payments run between wallets.
+  Groups are managed on the People page and apply retroactively, since
+  balances are always recomputed from source data.
 - **Settle-up tracking.** Payments can be recorded in the app so outstanding
   balances tick down to zero.
 - **Hosted on Railway** (app + Postgres in one project, ~$5/mo Hobby plan),
@@ -53,10 +60,16 @@ trips
   name         text          -- "Outer Banks 2026"
   created_at   timestamptz
 
+payment_groups                      -- a shared wallet (couple, family, ...)
+  id           serial PK
+  trip_id      FK -> trips
+  name         text          -- e.g. "Alex & Sam"
+
 participants
   id           serial PK
   trip_id      FK -> trips
   name         text          -- unique per trip
+  payment_group_id  FK -> payment_groups, nullable (ON DELETE SET NULL)
   UNIQUE (trip_id, name)
 
 expenses
@@ -101,11 +114,17 @@ Notes:
               + (settlements sent) − (settlements received)`
    Positive → the group owes them; negative → they owe the group. Balances
    always sum to zero.
-3. **Simplified debts (greedy matching).** Repeatedly match the largest
-   debtor with the largest creditor and transfer `min(|debt|, credit)`. For a
-   group of n people this yields at most n−1 payments, which is what people
-   actually want to Venmo. Recomputed live from source data on every view —
-   nothing about balances is stored, so edits/deletes always stay consistent.
+3. **Pool into wallets.** Per-person balances are summed into settling
+   entities: each payment group is one wallet; ungrouped participants are
+   wallets of one. Debts between members of the same group cancel here.
+4. **Simplified debts (greedy matching).** Repeatedly match the largest
+   debtor wallet with the largest creditor wallet and transfer
+   `min(|debt|, credit)`. For n wallets this yields at most n−1 payments,
+   which is what people actually want to Venmo. Recorded settlements are
+   stored against a group's representative member (lowest id) and displayed
+   under the wallet's name. Everything is recomputed live from source data
+   on every view — nothing about balances is stored, so edits/deletes and
+   group changes always stay consistent.
 
 ## Pages & flow
 
