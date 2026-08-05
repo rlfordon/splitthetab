@@ -35,6 +35,7 @@ export default async function EditExpense({
       <ExpenseForm
         action={update}
         participants={data.participants}
+        currency={data.trip.currency}
         defaults={{
           description: expense.description,
           amountCents: expense.amountCents,

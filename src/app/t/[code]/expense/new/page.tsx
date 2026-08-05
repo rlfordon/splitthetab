@@ -32,6 +32,7 @@ export default async function NewExpense({
       <ExpenseForm
         action={action}
         participants={data.participants}
+        currency={data.trip.currency}
         defaults={{
           spentOn: today,
           payerId: identity ?? undefined,

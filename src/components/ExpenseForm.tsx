@@ -1,14 +1,16 @@
 import type { Participant } from "@/db/schema";
-import { formatCents } from "@/lib/money";
+import { currencySymbol, minorToInputString, minorUnitDigits } from "@/lib/money";
 
 export function ExpenseForm({
   action,
   participants,
+  currency,
   defaults,
   submitLabel,
 }: {
   action: (formData: FormData) => Promise<void>;
   participants: Participant[];
+  currency: string;
   defaults: {
     description?: string;
     amountCents?: number;
@@ -18,9 +20,11 @@ export function ExpenseForm({
   };
   submitLabel: string;
 }) {
+  const symbol = currencySymbol(currency);
+  const wholeCurrency = minorUnitDigits(currency) === 0;
   const amountDefault =
     defaults.amountCents != null
-      ? formatCents(defaults.amountCents).replace(/[$,]/g, "")
+      ? minorToInputString(defaults.amountCents, currency)
       : "";
   const sharerDefault = new Set(defaults.sharerIds ?? participants.map((p) => p.id));
 
@@ -47,15 +51,15 @@ export function ExpenseForm({
           </label>
           <div className="relative">
             <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">
-              $
+              {symbol}
             </span>
             <input
               id="amount"
               name="amount"
               defaultValue={amountDefault}
-              inputMode="decimal"
-              placeholder="43.72"
-              className="w-full rounded-xl border border-slate-300 bg-white py-3 pl-8 pr-4 focus:border-brand focus:outline-none"
+              inputMode={wholeCurrency ? "numeric" : "decimal"}
+              placeholder={wholeCurrency ? "4300" : "43.72"}
+              className="w-full rounded-xl border border-slate-300 bg-white py-3 pl-10 pr-4 focus:border-brand focus:outline-none"
               required
             />
           </div>

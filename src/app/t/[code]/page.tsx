@@ -5,7 +5,7 @@ import { TripNav } from "@/components/TripNav";
 import { pickName, switchName } from "@/lib/actions";
 import { buildEntities } from "@/lib/entities";
 import { getIdentity } from "@/lib/identity";
-import { formatCents } from "@/lib/money";
+import { formatMoney } from "@/lib/money";
 import { getTripData } from "@/lib/queries";
 import { aggregateBalances, computeBalances } from "@/lib/settlement";
 
@@ -92,16 +92,16 @@ export default async function TripPage({
               }`}
             >
               {myBalance > 0
-                ? `${balanceLabel} owed ${formatCents(myBalance)}`
+                ? `${balanceLabel} owed ${formatMoney(myBalance, trip.currency)}`
                 : myBalance < 0
-                  ? `${myEntity.memberIds.length > 1 ? myEntity.name : "You"} owe ${formatCents(-myBalance)}`
+                  ? `${myEntity.memberIds.length > 1 ? myEntity.name : "You"} owe ${formatMoney(-myBalance, trip.currency)}`
                   : "You're all square"}
             </p>
           </div>
           <div className="text-right">
             <p className="text-sm text-slate-500">Trip total</p>
             <p className="mt-1 text-xl font-bold text-slate-700">
-              {formatCents(totalSpent)}
+              {formatMoney(totalSpent, trip.currency)}
             </p>
           </div>
         </div>
@@ -128,7 +128,7 @@ export default async function TripPage({
                 >
                   <div className="flex items-baseline justify-between gap-2">
                     <span className="font-medium">{e.description}</span>
-                    <span className="font-semibold">{formatCents(e.amountCents)}</span>
+                    <span className="font-semibold">{formatMoney(e.amountCents, trip.currency)}</span>
                   </div>
                   <p className="mt-1 text-sm text-slate-500">
                     {nameOf.get(e.payerId)} paid &middot; {e.spentOn} &middot; split{" "}

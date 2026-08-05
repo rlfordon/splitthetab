@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createTrip } from "@/lib/actions";
+import { DEFAULT_CURRENCY, SUPPORTED_CURRENCIES } from "@/lib/money";
 
 export default async function NewTrip({
   searchParams,
@@ -51,6 +52,27 @@ export default async function NewTrip({
           />
           <p className="mt-1 text-xs text-slate-500">
             You can add late joiners any time.
+          </p>
+        </div>
+
+        <div>
+          <label htmlFor="currency" className="mb-1 block text-sm font-medium text-slate-700">
+            Currency
+          </label>
+          <select
+            id="currency"
+            name="currency"
+            defaultValue={DEFAULT_CURRENCY}
+            className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 focus:border-brand focus:outline-none"
+          >
+            {SUPPORTED_CURRENCIES.map((c) => (
+              <option key={c.code} value={c.code}>
+                {c.code} — {c.name}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-slate-500">
+            All receipts on this trip use one currency.
           </p>
         </div>
 

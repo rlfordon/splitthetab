@@ -13,7 +13,12 @@ a tradeoff exists.
   list. Your choice is remembered on your device.
 - **Receipts (expenses).** Description, amount, date, who paid, and who's
   chipping in. **Equal split** among the selected people. No photo
-  attachments. USD only.
+  attachments.
+- **Per-trip currency.** Chosen when the trip is created (default USD) from
+  a curated list; every receipt on the trip uses it. No conversion between
+  currencies. Amounts are stored in the currency's minor units and
+  zero-decimal currencies (JPY, KRW, VND) are handled correctly — whole
+  amounts only, formatted without decimals.
 - **Anyone on the trip can edit or delete any receipt** (honor system).
 - **Settlement: simplified debts.** At any point (not just trip end) the app
   nets all balances and shows the minimum set of payments — "Sam pays
@@ -51,13 +56,15 @@ is stored in a cookie/localStorage per trip.
 
 ## Data model
 
-All money is stored as **integer cents** to avoid float drift.
+All money is stored as **integers in the trip currency's minor units**
+(cents, pence, whole yen, ...) to avoid float drift.
 
 ```
 trips
   id           serial PK
   code         text UNIQUE   -- short human-friendly code, e.g. "BEACH24"
   name         text          -- "Outer Banks 2026"
+  currency     text          -- ISO code, default 'USD'
   created_at   timestamptz
 
 payment_groups                      -- a shared wallet (couple, family, ...)

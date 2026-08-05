@@ -15,6 +15,13 @@
       "when": 1785806364312,
       "tag": "0001_true_ultimatum",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785944472009,
+      "tag": "0002_right_starfox",
+      "breakpoints": true
     }
   ]
 }

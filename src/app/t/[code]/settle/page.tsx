@@ -4,7 +4,7 @@ import { TripHeader } from "@/components/TripHeader";
 import { TripNav } from "@/components/TripNav";
 import { deleteSettlement, recordSettlement } from "@/lib/actions";
 import { buildEntities } from "@/lib/entities";
-import { formatCents } from "@/lib/money";
+import { formatMoney } from "@/lib/money";
 import { getTripData } from "@/lib/queries";
 import { aggregateBalances, computeBalances, simplifyDebts } from "@/lib/settlement";
 
@@ -69,9 +69,9 @@ export default async function SettlePage({
                     }
                   >
                     {balance > 0
-                      ? `is owed ${formatCents(balance)}`
+                      ? `is owed ${formatMoney(balance, trip.currency)}`
                       : balance < 0
-                        ? `owes ${formatCents(-balance)}`
+                        ? `owes ${formatMoney(-balance, trip.currency)}`
                         : "settled"}
                   </span>
                 </div>
@@ -110,7 +110,7 @@ export default async function SettlePage({
                       {from.name} pays {to.name}
                     </p>
                     <p className="text-lg font-bold text-slate-800">
-                      {formatCents(payment.amountCents)}
+                      {formatMoney(payment.amountCents, trip.currency)}
                     </p>
                   </div>
                   <form action={record}>
@@ -151,7 +151,7 @@ export default async function SettlePage({
                   <span>
                     <span className="font-medium">{walletNameOf(s.fromId)}</span> paid{" "}
                     <span className="font-medium">{walletNameOf(s.toId)}</span>{" "}
-                    <span className="font-semibold">{formatCents(s.amountCents)}</span>
+                    <span className="font-semibold">{formatMoney(s.amountCents, trip.currency)}</span>
                   </span>
                   <form action={remove}>
                     <ConfirmSubmit

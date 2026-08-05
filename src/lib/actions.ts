@@ -14,7 +14,7 @@ import {
   trips,
 } from "@/db/schema";
 import { clearIdentity, getIdentity, setIdentity } from "./identity";
-import { parseAmountToCents } from "./money";
+import { DEFAULT_CURRENCY, isSupportedCurrency, parseAmountToMinor } from "./money";
 import { getTripByCode } from "./queries";
 
 // Unambiguous uppercase alphabet (no 0/O/1/I) for trip codes.
@@ -45,6 +45,8 @@ export async function createTrip(formData: FormData) {
   if (!name || names.length < 2) {
     redirect("/new?error=A trip needs a name and at least two people (one per line).");
   }
+  const rawCurrency = String(formData.get("currency") ?? "").toUpperCase();
+  const currency = isSupportedCurrency(rawCurrency) ? rawCurrency : DEFAULT_CURRENCY;
 
   const code = await db.transaction(async (tx) => {
     let tripCode = generateCode();
@@ -56,7 +58,7 @@ export async function createTrip(formData: FormData) {
     }
     const [trip] = await tx
       .insert(trips)
-      .values({ code: tripCode, name })
+      .values({ code: tripCode, name, currency })
       .returning();
     await tx
       .insert(participants)
@@ -180,13 +182,14 @@ interface ExpenseFields {
 }
 
 async function parseExpenseForm(
-  tripId: number,
+  trip: { id: number; currency: string },
   formData: FormData,
 ): Promise<ExpenseFields | string> {
+  const tripId = trip.id;
   const description = String(formData.get("description") ?? "").trim();
   if (!description) return "Description is required.";
 
-  const amountCents = parseAmountToCents(String(formData.get("amount") ?? ""));
+  const amountCents = parseAmountToMinor(String(formData.get("amount") ?? ""), trip.currency);
   if (!amountCents) return "Enter a valid amount like 43.72.";
 
   const spentOn = String(formData.get("spentOn") ?? "").trim();
@@ -213,7 +216,7 @@ async function parseExpenseForm(
 export async function createExpense(code: string, formData: FormData) {
   const trip = await getTripByCode(code);
   if (!trip) redirect("/");
-  const fields = await parseExpenseForm(trip.id, formData);
+  const fields = await parseExpenseForm(trip, formData);
   if (typeof fields === "string") {
     redirect(`/t/${code}/expense/new?error=${encodeURIComponent(fields)}`);
   }
@@ -246,7 +249,7 @@ export async function createExpense(code: string, formData: FormData) {
 export async function updateExpense(code: string, expenseId: number, formData: FormData) {
   const trip = await getTripByCode(code);
   if (!trip) redirect("/");
-  const fields = await parseExpenseForm(trip.id, formData);
+  const fields = await parseExpenseForm(trip, formData);
   if (typeof fields === "string") {
     redirect(`/t/${code}/expense/${expenseId}?error=${encodeURIComponent(fields)}`);
   }
@@ -294,7 +297,7 @@ export async function recordSettlement(code: string, formData: FormData) {
   const toId = parseInt(String(formData.get("toId") ?? ""), 10);
   const amountCents =
     parseInt(String(formData.get("amountCents") ?? ""), 10) ||
-    parseAmountToCents(String(formData.get("amount") ?? "")) ||
+    parseAmountToMinor(String(formData.get("amount") ?? ""), trip.currency) ||
     0;
   if (!Number.isFinite(fromId) || !Number.isFinite(toId) || fromId === toId || amountCents <= 0) {
     redirect(`/t/${code}/settle`);

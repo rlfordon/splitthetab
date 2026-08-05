@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { buildEntities } from "./entities";
-import { formatCents, parseAmountToCents } from "./money";
+import {
+  currencySymbol,
+  formatMoney,
+  minorToInputString,
+  minorUnitDigits,
+  parseAmountToMinor,
+} from "./money";
 import {
   aggregateBalances,
   computeBalances,
@@ -204,31 +210,46 @@ describe("payment groups", () => {
 });
 
 describe("money helpers", () => {
-  it("formats cents as dollars", () => {
-    expect(formatCents(0)).toBe("$0.00");
-    expect(formatCents(5)).toBe("$0.05");
-    expect(formatCents(123456)).toBe("$1,234.56");
-    expect(formatCents(-7350)).toBe("-$73.50");
+  it("formats minor units per currency", () => {
+    expect(formatMoney(0, "USD")).toBe("$0.00");
+    expect(formatMoney(5, "USD")).toBe("$0.05");
+    expect(formatMoney(123456, "USD")).toBe("$1,234.56");
+    expect(formatMoney(-7350, "USD")).toBe("-$73.50");
+    expect(formatMoney(123456, "EUR")).toBe("€1,234.56");
+    // JPY has no minor unit: 1234 is ¥1,234, not ¥12.34.
+    expect(formatMoney(1234, "JPY")).toBe("¥1,234");
+  });
+
+  it("knows currency decimals and symbols", () => {
+    expect(minorUnitDigits("USD")).toBe(2);
+    expect(minorUnitDigits("JPY")).toBe(0);
+    expect(currencySymbol("GBP")).toBe("£");
+    expect(minorToInputString(4372, "USD")).toBe("43.72");
+    expect(minorToInputString(4372, "JPY")).toBe("4372");
   });
 
   it("parses valid amounts", () => {
-    expect(parseAmountToCents("43.72")).toBe(4372);
-    expect(parseAmountToCents("$1,200")).toBe(120000);
-    expect(parseAmountToCents("5")).toBe(500);
-    expect(parseAmountToCents("0.5")).toBe(50);
+    expect(parseAmountToMinor("43.72", "USD")).toBe(4372);
+    expect(parseAmountToMinor("$1,200", "USD")).toBe(120000);
+    expect(parseAmountToMinor("5", "USD")).toBe(500);
+    expect(parseAmountToMinor("0.5", "USD")).toBe(50);
+    expect(parseAmountToMinor("4300", "JPY")).toBe(4300);
+    expect(parseAmountToMinor("€9.99", "EUR")).toBe(999);
   });
 
   it("rejects invalid amounts", () => {
-    expect(parseAmountToCents("")).toBeNull();
-    expect(parseAmountToCents("0")).toBeNull();
-    expect(parseAmountToCents("-5")).toBeNull();
-    expect(parseAmountToCents("1.234")).toBeNull();
-    expect(parseAmountToCents("abc")).toBeNull();
+    expect(parseAmountToMinor("", "USD")).toBeNull();
+    expect(parseAmountToMinor("0", "USD")).toBeNull();
+    expect(parseAmountToMinor("-5", "USD")).toBeNull();
+    expect(parseAmountToMinor("1.234", "USD")).toBeNull();
+    expect(parseAmountToMinor("abc", "USD")).toBeNull();
+    // Decimals are invalid in a zero-decimal currency.
+    expect(parseAmountToMinor("43.50", "JPY")).toBeNull();
   });
 
-  it("caps amounts at $1,000,000", () => {
-    expect(parseAmountToCents("1000000")).toBe(100_000_000);
-    expect(parseAmountToCents("1000000.01")).toBeNull();
-    expect(parseAmountToCents("99999999999")).toBeNull();
+  it("caps amounts at 100M minor units", () => {
+    expect(parseAmountToMinor("1000000", "USD")).toBe(100_000_000);
+    expect(parseAmountToMinor("1000000.01", "USD")).toBeNull();
+    expect(parseAmountToMinor("99999999999", "USD")).toBeNull();
   });
 });
