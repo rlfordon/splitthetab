@@ -1,1 +1,0 @@
-ALTER TABLE "trips" ADD COLUMN "currency" text DEFAULT 'USD' NOT NULL;

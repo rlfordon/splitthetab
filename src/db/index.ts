@@ -1,18 +1,12 @@
-import { drizzle, NodePgDatabase } from "drizzle-orm/node-postgres";
-import { Pool } from "pg";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
+import { drizzle, type DrizzleD1Database } from "drizzle-orm/d1";
 import * as schema from "./schema";
 
-// Reuse the pool across Next.js dev-server hot reloads.
-const globalForDb = globalThis as unknown as {
-  pool?: Pool;
-};
+export type Db = DrizzleD1Database<typeof schema>;
 
-const pool =
-  globalForDb.pool ??
-  new Pool({
-    connectionString: process.env.DATABASE_URL,
-    max: 5,
-  });
-globalForDb.pool = pool;
-
-export const db: NodePgDatabase<typeof schema> = drizzle(pool, { schema });
+// The D1 binding lives on the per-request Cloudflare env, so build the client on demand.
+// It's a thin wrapper around the binding; creating one per call is cheap.
+export function getDb(): Db {
+  const { env } = getCloudflareContext();
+  return drizzle(env.DB, { schema });
+}

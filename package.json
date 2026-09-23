@@ -8,16 +8,20 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start -p ${PORT:-3000}",
     "test": "vitest run",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate"
+    "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
+    "deploy": "opennextjs-cloudflare build && wrangler d1 migrations apply splitthetab --remote && opennextjs-cloudflare deploy",
+    "upload": "opennextjs-cloudflare build && opennextjs-cloudflare upload",
+    "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
+    "db:migrate:local": "wrangler d1 migrations apply splitthetab --local",
+    "db:migrate:remote": "wrangler d1 migrations apply splitthetab --remote",
+    "db:backup": "wrangler d1 export splitthetab --remote --output=backup.sql"
   },
   "dependencies": {
     "drizzle-orm": "^0.44.2",
     "nanoid": "^5.1.5",
     "next": "^15.4.5",
-    "pg": "^8.16.3",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
   },
@@ -26,14 +30,23 @@
     "lightningcss-linux-x64-gnu": "^1.32.0"
   },
   "devDependencies": {
+    "@opennextjs/cloudflare": "^1.20.6",
     "@tailwindcss/postcss": "^4.1.11",
     "@types/node": "^24.1.0",
-    "@types/pg": "^8.15.4",
     "@types/react": "^19.1.9",
     "@types/react-dom": "^19.1.7",
     "drizzle-kit": "^0.31.4",
+    "pg": "^8.23.0",
     "tailwindcss": "^4.1.11",
     "typescript": "^5.8.3",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "wrangler": "^4.137.0"
+  },
+  "allowScripts": {
+    "esbuild@0.18.20": true,
+    "esbuild@0.25.4": true,
+    "esbuild@0.25.12": true,
+    "esbuild@0.28.1": true,
+    "workerd@1.20260921.1": true
   }
 }

@@ -4,7 +4,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { customAlphabet } from "nanoid";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { db } from "@/db";
+import { getDb } from "@/db";
 import {
   expenses,
   expenseShares,
@@ -19,6 +19,17 @@ import { getTripByCode } from "./queries";
 
 // Unambiguous uppercase alphabet (no 0/O/1/I) for trip codes.
 const generateCode = customAlphabet("23456789ABCDEFGHJKMNPQRSTUVWXYZ", 6);
+
+// D1 has no interactive transactions. For a two-step write whose second step needs an id
+// from the first, run the second step and, if it throws, undo the first before rethrowing.
+async function undoOnFailure(step: () => Promise<unknown>, undo: () => Promise<unknown>) {
+  try {
+    await step();
+  } catch (err) {
+    await undo().catch(() => {});
+    throw err;
+  }
+}
 
 function requireNames(raw: FormDataEntryValue | null): string[] {
   const names = String(raw ?? "")
@@ -40,6 +51,7 @@ function isRealDate(s: string): boolean {
 }
 
 export async function createTrip(formData: FormData) {
+  const db = getDb();
   const name = String(formData.get("name") ?? "").trim();
   const names = requireNames(formData.get("participants"));
   if (!name || names.length < 2) {
@@ -48,23 +60,24 @@ export async function createTrip(formData: FormData) {
   const rawCurrency = String(formData.get("currency") ?? "").toUpperCase();
   const currency = isSupportedCurrency(rawCurrency) ? rawCurrency : DEFAULT_CURRENCY;
 
-  const code = await db.transaction(async (tx) => {
-    let tripCode = generateCode();
-    // Retry on the (unlikely) chance of a code collision.
-    for (let attempt = 0; attempt < 5; attempt++) {
-      const [existing] = await tx.select().from(trips).where(eq(trips.code, tripCode));
-      if (!existing) break;
-      tripCode = generateCode();
-    }
-    const [trip] = await tx
-      .insert(trips)
-      .values({ code: tripCode, name, currency })
-      .returning();
-    await tx
-      .insert(participants)
-      .values(names.map((n) => ({ tripId: trip.id, name: n })));
-    return trip.code;
-  });
+  let tripCode = generateCode();
+  // Retry on the (unlikely) chance of a code collision.
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const [existing] = await db.select().from(trips).where(eq(trips.code, tripCode));
+    if (!existing) break;
+    tripCode = generateCode();
+  }
+  // D1 has no interactive transactions, and the participants need the new trip id,
+  // so insert in two steps and remove the trip if the second step fails.
+  const [trip] = await db
+    .insert(trips)
+    .values({ code: tripCode, name, currency })
+    .returning();
+  await undoOnFailure(
+    () => db.insert(participants).values(names.map((n) => ({ tripId: trip.id, name: n }))),
+    () => db.delete(trips).where(eq(trips.id, trip.id)),
+  );
+  const code = trip.code;
 
   redirect(`/t/${code}`);
 }
@@ -79,6 +92,7 @@ export async function joinTrip(formData: FormData) {
 }
 
 export async function pickName(code: string, formData: FormData) {
+  const db = getDb();
   const participantId = parseInt(String(formData.get("participantId") ?? ""), 10);
   const trip = await getTripByCode(code);
   if (!trip) redirect("/");
@@ -98,6 +112,7 @@ export async function switchName(code: string) {
 }
 
 export async function addParticipant(code: string, formData: FormData) {
+  const db = getDb();
   const name = String(formData.get("name") ?? "").trim();
   const trip = await getTripByCode(code);
   if (!trip || !name) return;
@@ -109,6 +124,7 @@ export async function addParticipant(code: string, formData: FormData) {
 }
 
 export async function renameParticipant(code: string, formData: FormData) {
+  const db = getDb();
   const id = parseInt(String(formData.get("participantId") ?? ""), 10);
   const name = String(formData.get("name") ?? "").trim();
   const trip = await getTripByCode(code);
@@ -126,6 +142,7 @@ export async function renameParticipant(code: string, formData: FormData) {
 }
 
 export async function createPaymentGroup(code: string, formData: FormData) {
+  const db = getDb();
   const trip = await getTripByCode(code);
   if (!trip) redirect("/");
 
@@ -147,22 +164,25 @@ export async function createPaymentGroup(code: string, formData: FormData) {
     String(formData.get("name") ?? "").trim() ||
     members.map((m) => m.name).join(" & ");
 
-  await db.transaction(async (tx) => {
-    const [group] = await tx
-      .insert(paymentGroups)
-      .values({ tripId: trip.id, name })
-      .returning();
-    await tx
-      .update(participants)
-      .set({ paymentGroupId: group.id })
-      .where(and(eq(participants.tripId, trip.id), inArray(participants.id, memberIds)));
-  });
+  const [group] = await db
+    .insert(paymentGroups)
+    .values({ tripId: trip.id, name })
+    .returning();
+  await undoOnFailure(
+    () =>
+      db
+        .update(participants)
+        .set({ paymentGroupId: group.id })
+        .where(and(eq(participants.tripId, trip.id), inArray(participants.id, memberIds))),
+    () => db.delete(paymentGroups).where(eq(paymentGroups.id, group.id)),
+  );
 
   revalidatePath(`/t/${code}`, "layout");
   redirect(`/t/${code}/people`);
 }
 
 export async function deletePaymentGroup(code: string, groupId: number) {
+  const db = getDb();
   const trip = await getTripByCode(code);
   if (!trip) return;
   // participants.payment_group_id is ON DELETE SET NULL, so members revert
@@ -185,6 +205,7 @@ async function parseExpenseForm(
   trip: { id: number; currency: string },
   formData: FormData,
 ): Promise<ExpenseFields | string> {
+  const db = getDb();
   const tripId = trip.id;
   const description = String(formData.get("description") ?? "").trim();
   if (!description) return "Description is required.";
@@ -214,6 +235,7 @@ async function parseExpenseForm(
 }
 
 export async function createExpense(code: string, formData: FormData) {
+  const db = getDb();
   const trip = await getTripByCode(code);
   if (!trip) redirect("/");
   const fields = await parseExpenseForm(trip, formData);
@@ -222,31 +244,32 @@ export async function createExpense(code: string, formData: FormData) {
   }
 
   const createdBy = await getIdentity(code);
-  await db.transaction(async (tx) => {
-    const [expense] = await tx
-      .insert(expenses)
-      .values({
-        tripId: trip.id,
-        payerId: fields.payerId,
-        description: fields.description,
-        amountCents: fields.amountCents,
-        spentOn: fields.spentOn,
-        createdBy,
-      })
-      .returning();
-    await tx.insert(expenseShares).values(
-      fields.sharerIds.map((participantId) => ({
-        expenseId: expense.id,
-        participantId,
-      })),
-    );
-  });
+  const [expense] = await db
+    .insert(expenses)
+    .values({
+      tripId: trip.id,
+      payerId: fields.payerId,
+      description: fields.description,
+      amountCents: fields.amountCents,
+      spentOn: fields.spentOn,
+      createdBy,
+    })
+    .returning();
+  // expense_shares cascade on delete, so undoing the expense removes any partial shares.
+  await undoOnFailure(
+    () =>
+      db.insert(expenseShares).values(
+        fields.sharerIds.map((participantId) => ({ expenseId: expense.id, participantId })),
+      ),
+    () => db.delete(expenses).where(eq(expenses.id, expense.id)),
+  );
 
   revalidatePath(`/t/${code}`, "layout");
   redirect(`/t/${code}`);
 }
 
 export async function updateExpense(code: string, expenseId: number, formData: FormData) {
+  const db = getDb();
   const trip = await getTripByCode(code);
   if (!trip) redirect("/");
   const fields = await parseExpenseForm(trip, formData);
@@ -254,8 +277,14 @@ export async function updateExpense(code: string, expenseId: number, formData: F
     redirect(`/t/${code}/expense/${expenseId}?error=${encodeURIComponent(fields)}`);
   }
 
-  await db.transaction(async (tx) => {
-    const [updated] = await tx
+  const [existing] = await db
+    .select({ id: expenses.id })
+    .from(expenses)
+    .where(and(eq(expenses.id, expenseId), eq(expenses.tripId, trip.id)));
+  if (!existing) throw new Error("Expense not found.");
+  // Nothing here depends on a returned id, so a D1 batch applies all three atomically.
+  await db.batch([
+    db
       .update(expenses)
       .set({
         payerId: fields.payerId,
@@ -263,23 +292,19 @@ export async function updateExpense(code: string, expenseId: number, formData: F
         amountCents: fields.amountCents,
         spentOn: fields.spentOn,
       })
-      .where(and(eq(expenses.id, expenseId), eq(expenses.tripId, trip.id)))
-      .returning();
-    if (!updated) throw new Error("Expense not found.");
-    await tx.delete(expenseShares).where(eq(expenseShares.expenseId, expenseId));
-    await tx.insert(expenseShares).values(
-      fields.sharerIds.map((participantId) => ({
-        expenseId,
-        participantId,
-      })),
-    );
-  });
+      .where(and(eq(expenses.id, expenseId), eq(expenses.tripId, trip.id))),
+    db.delete(expenseShares).where(eq(expenseShares.expenseId, expenseId)),
+    db.insert(expenseShares).values(
+      fields.sharerIds.map((participantId) => ({ expenseId, participantId })),
+    ),
+  ]);
 
   revalidatePath(`/t/${code}`, "layout");
   redirect(`/t/${code}`);
 }
 
 export async function deleteExpense(code: string, expenseId: number) {
+  const db = getDb();
   const trip = await getTripByCode(code);
   if (!trip) redirect("/");
   await db
@@ -290,6 +315,7 @@ export async function deleteExpense(code: string, expenseId: number) {
 }
 
 export async function recordSettlement(code: string, formData: FormData) {
+  const db = getDb();
   const trip = await getTripByCode(code);
   if (!trip) redirect("/");
 
@@ -316,6 +342,7 @@ export async function recordSettlement(code: string, formData: FormData) {
 }
 
 export async function deleteSettlement(code: string, settlementId: number) {
+  const db = getDb();
   const trip = await getTripByCode(code);
   if (!trip) return;
   await db

@@ -32,7 +32,7 @@ a tradeoff exists.
   balances are always recomputed from source data.
 - **Settle-up tracking.** Payments can be recorded in the app so outstanding
   balances tick down to zero.
-- **Hosted on Railway** (app + Postgres in one project, ~$5/mo Hobby plan),
+- **Hosted on Cloudflare Workers** (app + D1 database, free plan, no cold starts),
   reachable from everyone's phones. Mobile-first UI.
 
 Out of scope (deliberately): user accounts, receipt photos/OCR, multi-currency,
@@ -45,11 +45,11 @@ Boring, well-supported, free to run:
 
 | Layer     | Choice                                   | Why |
 |-----------|------------------------------------------|-----|
-| Framework | **Next.js (App Router, TypeScript)**     | One codebase for UI + server logic; deploys anywhere Node runs. |
+| Framework | **Next.js (App Router, TypeScript)**     | One codebase for UI + server logic; runs on Workers via the OpenNext adapter. |
 | Styling   | **Tailwind CSS**                         | Fast to build a clean mobile-first UI. |
-| Database  | **Postgres on Railway**                  | Lives in the same Railway project as the app; one dashboard, one `DATABASE_URL` reference variable. |
+| Database  | **Cloudflare D1 (SQLite)**               | Bound to the Worker as `DB`; free tier is far beyond what trips need, and data persists between trips. |
 | ORM       | **Drizzle**                              | Lightweight, typed schema + migrations. |
-| Hosting   | **Railway (Hobby plan)**                 | Push-to-deploy from GitHub; HTTPS URL for the group; no free-tier cold starts. |
+| Hosting   | **Cloudflare Workers (free plan)**       | Push-to-deploy from GitHub via Workers Builds; HTTPS URL for the group; no cold starts. (Moved from Railway in Sept 2026 to avoid a monthly fee.) |
 
 No auth library needed: the trip code is the credential, and the picked name
 is stored in a cookie/localStorage per trip.
@@ -61,26 +61,26 @@ All money is stored as **integers in the trip currency's minor units**
 
 ```
 trips
-  id           serial PK
+  id           integer PK
   code         text UNIQUE   -- short human-friendly code, e.g. "BEACH24"
   name         text          -- "Outer Banks 2026"
   currency     text          -- ISO code, default 'USD'
   created_at   timestamptz
 
 payment_groups                      -- a shared wallet (couple, family, ...)
-  id           serial PK
+  id           integer PK
   trip_id      FK -> trips
   name         text          -- e.g. "Alex & Sam"
 
 participants
-  id           serial PK
+  id           integer PK
   trip_id      FK -> trips
   name         text          -- unique per trip
   payment_group_id  FK -> payment_groups, nullable (ON DELETE SET NULL)
   UNIQUE (trip_id, name)
 
 expenses
-  id           serial PK
+  id           integer PK
   trip_id      FK -> trips
   payer_id     FK -> participants   -- who fronted the money
   description  text
@@ -95,7 +95,7 @@ expense_shares                      -- who's chipping in on this receipt
   PK (expense_id, participant_id)
 
 settlements                         -- recorded settle-up payments
-  id           serial PK
+  id           integer PK
   trip_id      FK -> trips
   from_id      FK -> participants
   to_id        FK -> participants
@@ -177,8 +177,8 @@ pickName            claim a participant identity (sets the device cookie)
 switchName          clear the device cookie
 addParticipant      add a late joiner
 renameParticipant
-createExpense       insert expense + sharer rows (transactional)
-updateExpense       replace fields + sharer rows (transactional)
+createExpense       insert expense, then sharer rows (expense removed if the second step fails; D1 has no interactive transactions)
+updateExpense       replace fields + sharer rows (one atomic D1 batch)
 deleteExpense
 recordSettlement    record a settle-up payment
 deleteSettlement    undo a recorded payment
@@ -207,5 +207,5 @@ authorization model, by design.
 3. **Expenses** — add/edit/delete, list view, equal-split share storage.
 4. **Settlement** — balance computation, greedy simplification, settle-up
    recording. Unit tests on the math (rounding, zero-sum invariant).
-5. **Polish & deploy** — mobile styling, empty states, deploy app + Postgres
+5. **Polish & deploy** — mobile styling, empty states, deploy app + database
    to Railway, smoke-test from a phone.

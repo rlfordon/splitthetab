@@ -5,3 +5,12 @@ out/
 .env.local
 *.tsbuildinfo
 next-env.d.ts
+
+# Cloudflare / OpenNext
+.open-next/
+.wrangler/
+.dev.vars
+
+# Database dumps (contain trip data)
+backup.sql
+export.sql

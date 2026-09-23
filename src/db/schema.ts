@@ -1,35 +1,35 @@
-import {
-  date,
-  integer,
-  pgTable,
-  primaryKey,
-  serial,
-  text,
-  timestamp,
-  unique,
-} from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { integer, primaryKey, sqliteTable, text, unique } from "drizzle-orm/sqlite-core";
 
-export const trips = pgTable("trips", {
-  id: serial("id").primaryKey(),
+// SQLite (Cloudflare D1). Timestamps are stored as unix seconds and read back as Date;
+// spent_on is a 'YYYY-MM-DD' string, matching what the Postgres date column returned.
+const id = () => integer("id").primaryKey({ autoIncrement: true });
+const createdAt = () =>
+  integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`);
+
+export const trips = sqliteTable("trips", {
+  id: id(),
   code: text("code").notNull().unique(),
   name: text("name").notNull(),
   currency: text("currency").notNull().default("USD"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  createdAt: createdAt(),
 });
 
 // A shared wallet: members pay and settle as one (couple, family, ...).
-export const paymentGroups = pgTable("payment_groups", {
-  id: serial("id").primaryKey(),
+export const paymentGroups = sqliteTable("payment_groups", {
+  id: id(),
   tripId: integer("trip_id")
     .notNull()
     .references(() => trips.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
 });
 
-export const participants = pgTable(
+export const participants = sqliteTable(
   "participants",
   {
-    id: serial("id").primaryKey(),
+    id: id(),
     tripId: integer("trip_id")
       .notNull()
       .references(() => trips.id, { onDelete: "cascade" }),
@@ -41,8 +41,8 @@ export const participants = pgTable(
   (t) => [unique().on(t.tripId, t.name)],
 );
 
-export const expenses = pgTable("expenses", {
-  id: serial("id").primaryKey(),
+export const expenses = sqliteTable("expenses", {
+  id: id(),
   tripId: integer("trip_id")
     .notNull()
     .references(() => trips.id, { onDelete: "cascade" }),
@@ -51,12 +51,12 @@ export const expenses = pgTable("expenses", {
     .references(() => participants.id),
   description: text("description").notNull(),
   amountCents: integer("amount_cents").notNull(),
-  spentOn: date("spent_on").notNull(),
+  spentOn: text("spent_on").notNull(),
   createdBy: integer("created_by").references(() => participants.id),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  createdAt: createdAt(),
 });
 
-export const expenseShares = pgTable(
+export const expenseShares = sqliteTable(
   "expense_shares",
   {
     expenseId: integer("expense_id")
@@ -69,8 +69,8 @@ export const expenseShares = pgTable(
   (t) => [primaryKey({ columns: [t.expenseId, t.participantId] })],
 );
 
-export const settlements = pgTable("settlements", {
-  id: serial("id").primaryKey(),
+export const settlements = sqliteTable("settlements", {
+  id: id(),
   tripId: integer("trip_id")
     .notNull()
     .references(() => trips.id, { onDelete: "cascade" }),
@@ -81,7 +81,7 @@ export const settlements = pgTable("settlements", {
     .notNull()
     .references(() => participants.id),
   amountCents: integer("amount_cents").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  createdAt: createdAt(),
 });
 
 export type Trip = typeof trips.$inferSelect;

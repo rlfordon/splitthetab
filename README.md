@@ -6,7 +6,7 @@ awkwardness.**
 Everyone enters their receipts during the trip; at the end (or any time), the
 app tells you exactly who pays whom, in the fewest possible payments.
 
-**Live app:** [splitthetab-production.up.railway.app](https://splitthetab-production.up.railway.app)
+**Live app:** [splitthetab.rlfordon.workers.dev](https://splitthetab.rlfordon.workers.dev)
 
 ## Features
 
@@ -53,44 +53,72 @@ app tells you exactly who pays whom, in the fewest possible payments.
 
 ## Tech
 
-Next.js (App Router) · Tailwind CSS · Drizzle ORM · PostgreSQL — deployed on
-[Railway](https://railway.com). See [DESIGN.md](./DESIGN.md) for the data
-model, settlement algorithm, and design decisions.
+Next.js (App Router) · Tailwind CSS · Drizzle ORM · Cloudflare D1 (SQLite) —
+deployed on [Cloudflare Workers](https://workers.cloudflare.com) with the
+[OpenNext adapter](https://opennext.js.org/cloudflare). It runs on Cloudflare's
+free plan: no monthly fee, no cold starts, and the database keeps its data
+between trips. See [DESIGN.md](./DESIGN.md) for the data model, settlement
+algorithm, and design decisions.
 
 ### Local development
 
-Requires Node 22+ and a Postgres database.
+Requires Node 22+.
 
 ```bash
 npm install
-echo 'DATABASE_URL=postgresql://user:pass@localhost:5432/splitthetab' > .env.local
-DATABASE_URL=postgresql://user:pass@localhost:5432/splitthetab npm run db:migrate
-npm run dev
+npm run db:migrate:local   # creates a local D1 database under .wrangler/
+npm run dev                # http://localhost:3000
 ```
 
-Then open http://localhost:3000. Run the settlement-math tests with `npm test`.
+`npm run preview` runs the production build locally in the Workers runtime.
+Run the settlement-math tests with `npm test`.
 
-### Deploying your own
+### Deploying your own (one-time setup)
 
-1. Create a Railway project → **Deploy from GitHub repo** → pick your fork.
-2. In the same project: **Create → Database → Add PostgreSQL**.
-3. On the app service, set `DATABASE_URL` = `${{Postgres.DATABASE_URL}}`
-   (the services must be in the same project).
-4. **Settings → Networking → Generate Domain** and share the URL.
+1. **Create the database.** In the Cloudflare dashboard: **Storage & Databases →
+   D1 → Create**, name it `splitthetab`. Copy its **Database ID** into
+   `wrangler.jsonc` (`database_id`) and commit.
+   (CLI alternative: `npx wrangler d1 create splitthetab`.)
+2. **Connect the repo.** **Workers & Pages → Create → Import a repository**, pick
+   this repo, and set:
+   - Build command: `npx opennextjs-cloudflare build`
+   - Deploy command: `npx wrangler d1 migrations apply splitthetab --remote && npx opennextjs-cloudflare deploy`
 
-The start command runs database migrations before launching, so pushes to
-`main` deploy and migrate automatically.
+   Every push to `main` then builds, applies any new migrations, and deploys.
+3. The app is served at `https://splitthetab.<your-subdomain>.workers.dev`.
 
 ### Database changes
 
 Edit `src/db/schema.ts`, then:
 
 ```bash
-npm run db:generate   # writes a new SQL migration to drizzle/
-npm run db:migrate    # applies it (uses DATABASE_URL)
+npm run db:generate        # writes a new SQL migration to migrations/
+npm run db:migrate:local   # try it locally
 ```
 
-Commit the generated migration files — they're applied on deploy.
+Commit the generated migration; the deploy command applies it to the live database.
+
+### Backups
+
+```bash
+npm run db:backup   # npx wrangler d1 export splitthetab --remote --output=backup.sql
+```
+
+D1 also keeps point-in-time history (7 days on the free plan) (**D1 → splitthetab → Time Travel**).
+
+### Moving data from the old Railway Postgres (one time)
+
+The app used to run on Railway with Postgres. To bring existing trips over,
+after the D1 database exists and has its migrations applied (steps above):
+
+```bash
+# DATABASE_URL: Railway → Postgres service → Variables → DATABASE_PUBLIC_URL
+DATABASE_URL='postgresql://…' node scripts/export-from-postgres.mjs > export.sql
+npx wrangler d1 execute splitthetab --remote --file=export.sql
+```
+
+Trip codes and ids are preserved, so old trip links keep working on the new
+domain. Run it once, against an empty database, then shut down the Railway project.
 
 ## License
 

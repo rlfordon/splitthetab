@@ -1,5 +1,5 @@
 import { asc, desc, eq } from "drizzle-orm";
-import { db } from "@/db";
+import { getDb } from "@/db";
 import {
   expenses,
   expenseShares,
@@ -27,6 +27,7 @@ export interface TripData {
 }
 
 export async function getTripByCode(code: string): Promise<Trip | null> {
+  const db = getDb();
   const [trip] = await db
     .select()
     .from(trips)
@@ -35,6 +36,7 @@ export async function getTripByCode(code: string): Promise<Trip | null> {
 }
 
 export async function getTripData(code: string): Promise<TripData | null> {
+  const db = getDb();
   const trip = await getTripByCode(code);
   if (!trip) return null;
 
