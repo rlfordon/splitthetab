@@ -19,7 +19,7 @@
       "binding": "DB",
       "database_name": "splitthetab",
       // From `npx wrangler d1 create splitthetab` (or the Cloudflare dashboard: Storage & Databases → D1).
-      "database_id": "REPLACE_WITH_D1_ID",
+      "database_id": "2a66d5e1-b23f-4549-aa3e-ac8254e91c1d",
       "migrations_dir": "migrations"
     }
   ],
